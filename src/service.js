@@ -1,17 +1,21 @@
 import { Redis } from '@upstash/redis';
 import jwt from 'jsonwebtoken';
 import AsyncLock from 'async-lock';
-import { InputError, AccessError } from './error';
+import fs from 'fs';
+import { InputError, AccessError } from './error.js';
 
 const lock = new AsyncLock();
 
 const JWT_SECRET = 'giraffegiraffebeetroot';
 
-// Initialize Upstash Redis
-const redis = new Redis({
+// Check if Redis credentials are available
+const hasRedisCredentials = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN);
+
+// Initialize Upstash Redis only if credentials are available
+const redis = hasRedisCredentials ? new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
-});
+}) : null;
 
 /***************************************************************
                        State Management
@@ -21,22 +25,35 @@ let users = {};
 let listings = {};
 let bookings = {};
 
-// Load data from Redis on startup
+const DATABASE_FILE = './database.json';
+
+// Load data from Redis or local file
 const loadData = async () => {
-  try {
-    const data = await redis.get('airbrb_data');
-    if (data) {
-      users = data.users || {};
-      listings = data.listings || {};
-      bookings = data.bookings || {};
-      console.log('Data loaded from Redis');
-    } else {
-      console.log('No data found in Redis, starting fresh');
-      await save();
+  if (hasRedisCredentials && redis) {
+    try {
+      const data = await redis.get('airbrb_data');
+      if (data) {
+        users = data.users || {};
+        listings = data.listings || {};
+        bookings = data.bookings || {};
+        console.log('Data loaded from Redis');
+        return;
+      }
+    } catch (error) {
+      console.log('Error loading data from Redis:', error);
     }
+  }
+
+  // Fall back to local file storage
+  try {
+    const data = fs.readFileSync(DATABASE_FILE);
+    const parsedData = JSON.parse(data);
+    users = parsedData.users || {};
+    listings = parsedData.listings || {};
+    bookings = parsedData.bookings || {};
+    console.log('Data loaded from local file');
   } catch (error) {
-    console.log('Error loading data from Redis:', error);
-    await save();
+    console.log('No existing database file, starting fresh');
   }
 };
 
@@ -47,14 +64,32 @@ const update = (users, listings, bookings) =>
   new Promise((resolve, reject) => {
     lock.acquire('saveData', async () => {
       try {
-        await redis.set('airbrb_data', {
-          users,
-          listings,
-          bookings,
-        });
+        // Try Redis first if available
+        if (hasRedisCredentials && redis) {
+          await redis.set('airbrb_data', {
+            users,
+            listings,
+            bookings,
+          });
+          console.log('Data saved to Redis');
+        } else {
+          // Fall back to local file storage
+          const dataToSave = JSON.stringify({ users, listings, bookings }, null, 2);
+          fs.writeFileSync(DATABASE_FILE, dataToSave);
+          console.log('Data saved to local file');
+        }
         resolve();
       } catch (error) {
-        reject(new Error('Writing to Redis failed'));
+        console.error('Error saving data:', error);
+        // Try local file as fallback
+        try {
+          const dataToSave = JSON.stringify({ users, listings, bookings }, null, 2);
+          fs.writeFileSync(DATABASE_FILE, dataToSave);
+          console.log('Data saved to local file (fallback)');
+          resolve();
+        } catch (fileError) {
+          reject(new Error('Writing to storage failed'));
+        }
       }
     });
   });

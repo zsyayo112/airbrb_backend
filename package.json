@@ -3,11 +3,12 @@
   "version": "1.0.0",
   "description": "",
   "main": "server.js",
+  "type": "module",
   "scripts": {
     "test": "jest test/*",
     "lint": "eslint src/*.js",
-    "start": "node -r esm src/server.js",
-    "dev": "nodemon -r esm src/server.js --ignore database.json",
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js --ignore database.json",
     "reset": "npx rimraf database.json"
   },
   "author": "",

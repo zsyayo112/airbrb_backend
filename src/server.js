@@ -4,9 +4,12 @@ import swaggerUi from 'swagger-ui-express';
 import bodyParser from 'body-parser';
 import cors from 'cors';
 import morgan from 'morgan';
+import { createRequire } from 'module';
 
-import { InputError, AccessError } from './error';
-import swaggerDocument from '../swagger.json';
+const require = createRequire(import.meta.url);
+const swaggerDocument = require('../swagger.json');
+
+import { InputError, AccessError } from './error.js';
 import {
   getEmailFromAuthorization,
   login,
@@ -28,7 +31,7 @@ import {
   removeBooking,
   acceptBooking,
   declineBooking,
-} from './service';
+} from './service.js';
 
 const app = express();
 
